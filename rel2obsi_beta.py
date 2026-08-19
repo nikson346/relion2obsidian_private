@@ -29,9 +29,14 @@ import traceback
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
-import matplotlib
 
 _MISSING_DEPENDENCIES = []
+
+try:
+    import matplotlib
+except ModuleNotFoundError:
+    matplotlib = None
+    _MISSING_DEPENDENCIES.append("matplotlib")
 
 try:
     from tqdm import tqdm
@@ -88,7 +93,8 @@ except ModuleNotFoundError as e:
     find_r2o_manifests = None
     _MISSING_DEPENDENCIES.append(e.name or "canvas_generator")
 
-matplotlib.use('Agg')
+if matplotlib is not None:
+    matplotlib.use('Agg')
 
 # Configure logging.
 # NOTE: previously this module attached a FileHandler("relion_to_obsidian.log")
