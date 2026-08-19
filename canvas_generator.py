@@ -43,8 +43,18 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 
-import starfile
-from tqdm import tqdm
+_MISSING_DEPENDENCIES = []
+
+try:
+    import starfile
+except ModuleNotFoundError:
+    starfile = None
+    _MISSING_DEPENDENCIES.append("starfile")
+try:
+    from tqdm import tqdm
+except ModuleNotFoundError:
+    tqdm = None
+    _MISSING_DEPENDENCIES.append("tqdm")
 
 # Logging übernehmen wenn als Modul genutzt
 logger = logging.getLogger("rel2obsi.canvas")
@@ -54,6 +64,17 @@ if not logger.handlers:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+
+def _ensure_runtime_dependencies():
+    missing = sorted({d for d in _MISSING_DEPENDENCIES if d})
+    if missing:
+        raise RuntimeError(
+            "Missing required Python package(s): "
+            + ", ".join(missing)
+            + ". Install dependencies with: "
+            + "conda env create -f environment.yml "
+            + "or conda install -c conda-forge numpy matplotlib mrcfile starfile scikit-image pillow tqdm natsort."
+        )
 
 # ---------------------------------------------------------------------------
 # Farben je Job-Typ (Obsidian Canvas unterstützt 6 Preset-Farben: 1-6)
@@ -739,28 +760,40 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    try:
+        _ensure_runtime_dependencies()
+    except RuntimeError as e:
+        logger.error(str(e))
+        sys.exit(2)
+
     # Importiere parse_relion_jobs aus dem Hauptskript
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from rel2obsi_beta import parse_relion_jobs
-    except ImportError:
+    except Exception as e:
         logger.error(
-            "rel2obsi_beta.py not found. Please make sure that both "
-            "files are stored at the same path."
+            "Could not import parse_relion_jobs from rel2obsi_beta.py. "
+            "Please make sure both files are in the same directory and all dependencies are installed. "
+            f"Import error: {e}"
         )
         sys.exit(1)
 
-    logger.info("Read RELION-Jobs...")
-    jobs = list(parse_relion_jobs(args.project_dir))
-    logger.info(f"{len(jobs)} jobs found.")
+    try:
+        logger.info("Read RELION-Jobs...")
+        jobs = list(parse_relion_jobs(args.project_dir))
+        logger.info(f"{len(jobs)} jobs found.")
 
-    build_canvas_from_jobs(
-        jobs,
-        args.output_dir,
-        args.project_dir,
-        canvas_name=args.canvas_name,
-        canvas_depth=args.canvas_depth,
-    )
+        build_canvas_from_jobs(
+            jobs,
+            args.output_dir,
+            args.project_dir,
+            canvas_name=args.canvas_name,
+            canvas_depth=args.canvas_depth,
+        )
+    except Exception as e:
+        logger.error(f"Error while creating the Canvas: {e}")
+        logger.debug(traceback.format_exc())
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -21,15 +21,6 @@ __version__ = "1.1.0"
 import os
 import json
 import argparse
-from tqdm import tqdm
-import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib.colors import LogNorm
-from natsort import natsorted
-import mrcfile
-import starfile
-from skimage.util import montage, img_as_ubyte
-from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 import re
 import datetime
@@ -38,10 +29,72 @@ import traceback
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
-import matplotlib
-from canvas_generator import build_canvas_from_jobs, find_r2o_manifests
 
-matplotlib.use('Agg')
+_MISSING_DEPENDENCIES = []
+
+try:
+    import matplotlib
+except ModuleNotFoundError:
+    matplotlib = None
+    _MISSING_DEPENDENCIES.append("matplotlib")
+
+try:
+    from tqdm import tqdm
+except ModuleNotFoundError:
+    tqdm = None
+    _MISSING_DEPENDENCIES.append("tqdm")
+try:
+    import numpy as np
+except ModuleNotFoundError:
+    np = None
+    _MISSING_DEPENDENCIES.append("numpy")
+try:
+    from matplotlib import pyplot as plt
+except ModuleNotFoundError:
+    plt = None
+    _MISSING_DEPENDENCIES.append("matplotlib")
+try:
+    from matplotlib.colors import LogNorm
+except ModuleNotFoundError:
+    LogNorm = None
+    _MISSING_DEPENDENCIES.append("matplotlib")
+try:
+    from natsort import natsorted
+except ModuleNotFoundError:
+    natsorted = None
+    _MISSING_DEPENDENCIES.append("natsort")
+try:
+    import mrcfile
+except ModuleNotFoundError:
+    mrcfile = None
+    _MISSING_DEPENDENCIES.append("mrcfile")
+try:
+    import starfile
+except ModuleNotFoundError:
+    starfile = None
+    _MISSING_DEPENDENCIES.append("starfile")
+try:
+    from skimage.util import montage, img_as_ubyte
+except ModuleNotFoundError:
+    montage = None
+    img_as_ubyte = None
+    _MISSING_DEPENDENCIES.append("scikit-image")
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ModuleNotFoundError:
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+    _MISSING_DEPENDENCIES.append("pillow")
+try:
+    from canvas_generator import build_canvas_from_jobs, find_r2o_manifests
+except ModuleNotFoundError as e:
+    build_canvas_from_jobs = None
+    find_r2o_manifests = None
+    _MISSING_DEPENDENCIES.append(e.name or "canvas_generator")
+
+if matplotlib is not None:
+    matplotlib.use('Agg')
 
 # Configure logging.
 # NOTE: previously this module attached a FileHandler("relion_to_obsidian.log")
@@ -59,6 +112,17 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("rel2obsi")
+
+def _ensure_runtime_dependencies():
+    missing = sorted({d for d in _MISSING_DEPENDENCIES if d})
+    if missing:
+        raise RuntimeError(
+            "Missing required Python package(s): "
+            + ", ".join(missing)
+            + ". Install dependencies with: "
+            + "conda env create -f environment.yml "
+            + "or conda install -c conda-forge numpy matplotlib mrcfile starfile scikit-image pillow tqdm natsort."
+        )
 
 def _attach_file_logging(log_path="relion_to_obsidian.log"):
     """Attach a file handler for logging. Called explicitly from main() so
@@ -1975,15 +2039,20 @@ def main():
     if not args.project_dir or not args.output_dir:
         parser.error("the following arguments are required: -i/--project_dir, -o/--output_dir")
 
-    # Attach file logging now that we're actually running as a script
-    # (not just being imported by canvas_generator.py's standalone mode).
-    _attach_file_logging()
-
     # Set log level based on verbosity
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
     try:
+        _ensure_runtime_dependencies()
+
+        # Attach file logging now that we're actually running as a script
+        # (not just being imported by canvas_generator.py's standalone mode).
+        try:
+            _attach_file_logging()
+        except OSError as e:
+            logger.warning(f"Could not enable file logging at relion_to_obsidian.log: {e}")
+
         # Show script information
         logger.info(f"Relion to Obsidian Converter")
         logger.info(f"Project directory: {args.project_dir}")
